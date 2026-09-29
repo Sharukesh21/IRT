@@ -1,0 +1,41 @@
+const fs = require('fs');
+const path = require('path');
+
+const srcDir = path.join(__dirname, 'src');
+
+function walk(dir) {
+    let results = [];
+    const list = fs.readdirSync(dir);
+    list.forEach(file => {
+        file = path.join(dir, file);
+        const stat = fs.statSync(file);
+        if (stat && stat.isDirectory()) {
+            results = results.concat(walk(file));
+        } else {
+            results.push(file);
+        }
+    });
+    return results;
+}
+
+const files = walk(srcDir).filter(f => f.endsWith('.tsx'));
+
+files.forEach(file => {
+    let content = fs.readFileSync(file, 'utf8');
+    let original = content;
+    
+    // Replace solid buttons with glass-dark-button
+    content = content.replace(/bg-slate-900 text-white[^"']*/g, match => {
+        return 'glass-dark-button ' + match.replace(/bg-slate-900\s*/g, '').replace(/text-white\s*/g, '').replace(/hover:bg-slate-700\s*/g, '');
+    });
+    
+    // Convert generic bg-white to glass (using standard spaces)
+    content = content.replace(/bg-white(\s|")/g, 'glass$1');
+    content = content.replace(/bg-slate-50(\s|")/g, 'bg-white/40 backdrop-blur-md$1');
+    content = content.replace(/bg-slate-100(\s|")/g, 'bg-white/50 backdrop-blur-lg$1');
+
+    if (content !== original) {
+        fs.writeFileSync(file, content, 'utf8');
+        console.log('Updated ' + file);
+    }
+});

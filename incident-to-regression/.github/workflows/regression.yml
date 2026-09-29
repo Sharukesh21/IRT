@@ -1,0 +1,67 @@
+name: Regression Verification
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+jobs:
+  regression:
+    name: Incident-Aware Regression Tests
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: sqlite+aiosqlite:///./ci_test.db
+      REGRESSION_API_URL: http://localhost:8000/api/v1
+      GITHUB_WEBHOOK_SECRET: ${{ secrets.REGRESSION_WEBHOOK_SECRET }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Apply database migrations
+        working-directory: backend
+        run: |
+          alembic upgrade head
+
+      - name: Start backend server
+        working-directory: backend
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo "Waiting for server..."
+          sleep 5
+          curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/api/v1/health
+
+      - name: Run targeted regression (incident-aware)
+        working-directory: backend
+        run: |
+          python cli.py run --incident "${{ github.event.pull_request.head.sha }}" \
+            --branch "${{ github.head_ref }}" \
+            --commit "${{ github.sha }}" \
+            --strategy TARGETED || python cli.py run --suite
+
+      - name: Save regression results
+        if: always()
+        working-directory: backend
+        run: |
+          curl -s http://localhost:8000/api/v1/ci/metrics > regression-results.json
+          cat regression-results.json
+
+      - name: Upload regression results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results
+          path: backend/regression-results.json

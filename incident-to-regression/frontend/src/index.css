@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply text-slate-900 font-sans min-h-screen bg-fixed antialiased;
+    background-color: #f8fafc;
+    background-image: 
+      radial-gradient(at 10% 10%, rgba(167, 139, 250, 0.3) 0px, transparent 50%),
+      radial-gradient(at 90% 10%, rgba(56, 189, 248, 0.3) 0px, transparent 50%),
+      radial-gradient(at 50% 90%, rgba(251, 113, 133, 0.3) 0px, transparent 50%),
+      radial-gradient(at 90% 90%, rgba(52, 211, 153, 0.3) 0px, transparent 50%),
+      radial-gradient(at 50% 50%, rgba(250, 204, 21, 0.2) 0px, transparent 50%);
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/60 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_0_rgba(31,38,135,0.05)];
+  }
+  
+  .glass-panel {
+    @apply bg-white/40 backdrop-blur-2xl border border-white/60 shadow-[0_4px_24px_0_rgba(0,0,0,0.04)];
+  }
+
+  .glass-header {
+    @apply bg-white/40 backdrop-blur-xl border-b border-white/50;
+  }
+  
+  .glass-sidebar {
+    @apply bg-white/30 backdrop-blur-2xl border-r border-white/50 shadow-[4px_0_24px_0_rgba(0,0,0,0.02)];
+  }
+  
+  .glass-button {
+    @apply bg-white/60 backdrop-blur-md border border-white/80 hover:bg-white/90 shadow-sm transition-all;
+  }
+  
+  .glass-dark-button {
+    @apply bg-slate-900/80 backdrop-blur-md border border-slate-700/50 hover:bg-slate-900 shadow-md text-white transition-all;
+  }
+}
