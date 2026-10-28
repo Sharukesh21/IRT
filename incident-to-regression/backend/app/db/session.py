@@ -26,13 +26,17 @@ def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
+        kwargs: dict = {
+            "echo": settings.DEBUG,
+            "pool_pre_ping": True,
+            "pool_recycle": settings.DB_POOL_RECYCLE,
+        }
+        if not settings.ASYNC_DATABASE_URL.startswith("sqlite"):
+            kwargs["pool_size"] = settings.DB_POOL_SIZE
+            kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
         _engine = create_async_engine(
             settings.ASYNC_DATABASE_URL,
-            echo=settings.DEBUG,
-            pool_size=5,
-            max_overflow=10,
-            pool_pre_ping=True,  # Detect stale connections automatically
-            pool_recycle=3600,   # Recycle connections every hour
+            **kwargs,
         )
     return _engine
 

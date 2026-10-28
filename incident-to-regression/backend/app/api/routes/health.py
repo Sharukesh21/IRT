@@ -32,6 +32,34 @@ async def health_check() -> HealthResponse:
 
 
 @router.get(
+    "/live",
+    summary="Liveness probe",
+    description="Kubernetes liveness probe. Returns 200 if process is up.",
+)
+async def liveness_probe() -> dict[str, str]:
+    return {"status": "alive"}
+
+
+@router.get(
+    "/ready",
+    summary="Readiness probe",
+    description="Kubernetes readiness probe. Returns 200 only if DB and internal dependencies are ready.",
+)
+async def readiness_probe() -> JSONResponse:
+    service = get_health_service()
+    db_health = await service.get_database_health()
+    if db_health.status == "ok":
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "ready", "database": "ok", "latency_ms": db_health.latency_ms},
+        )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": "not_ready", "database": db_health.status, "error": db_health.error},
+    )
+
+
+@router.get(
     "/database",
     summary="Database connectivity check",
     description="Executes a SELECT 1 query against PostgreSQL to verify connectivity. "

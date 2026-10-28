@@ -23,8 +23,17 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = False
 
+    # Security & API Auth
+    API_KEY_ENABLED: bool = False
+    API_KEYS: list[str] = ["dev-admin-key", "ci-bot-key-secret"]
+    RATE_LIMIT_PER_MINUTE: int = 120
+    MAX_INGEST_PAYLOAD_BYTES: int = 1_000_000  # 1MB limit
+
     # Database (required)
     DATABASE_URL: Annotated[str, Field(min_length=1)]
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE: int = 1800
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]

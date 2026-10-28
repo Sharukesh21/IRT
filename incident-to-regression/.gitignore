@@ -38,6 +38,10 @@ yarn-debug.log*
 yarn-error.log*
 frontend/dist/
 
+# Submodules / Temporary local project directory
+project/
+
+
 # DB
 *.db
 *.sqlite3

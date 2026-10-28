@@ -88,6 +88,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             status_code=response.status_code,
             duration_ms=duration_ms,
         )
+
+        # Record metrics
+        try:
+            from app.core.metrics import record_http_request
+            record_http_request(request.method, str(request.url.path), response.status_code, duration_ms / 1000.0)
+        except Exception:
+            pass
+
         return response
 
 

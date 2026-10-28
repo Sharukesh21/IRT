@@ -19,6 +19,9 @@ from app.db.models.regression_test import RegressionTest
 from app.domain.ingestion import ExternalIncidentIngestor
 from app.domain.orchestrator import RegressionOrchestrator
 from app.core.config import get_settings
+from app.core.security import enforce_rate_limit
+from app.core.metrics import increment_metric
+from fastapi import BackgroundTasks
 
 router = APIRouter(tags=["CI / Production Incidents"])
 settings = get_settings()
@@ -49,6 +52,7 @@ class CIRunRequest(BaseModel):
     trigger_source: Optional[str] = "PULL_REQUEST"
     repository: Optional[str] = None
     pull_request_number: Optional[int] = None
+    async_mode: bool = False
 
 
 class PolicyCreate(BaseModel):
@@ -62,9 +66,21 @@ class PolicyCreate(BaseModel):
 # ── Ingestion ──────────────────────────────────────────────────────────────────
 
 @router.post("/ci/incidents/ingest")
-async def ingest_incident(payload: ExternalIncidentPayload, db: AsyncSession = Depends(get_db_session)):
+async def ingest_incident(
+    request: Request,
+    payload: ExternalIncidentPayload,
+    db: AsyncSession = Depends(get_db_session)
+):
+    await enforce_rate_limit(request)
+    
+    # Payload size defense
+    content_length = request.headers.get("Content-Length")
+    if content_length and int(content_length) > settings.MAX_INGEST_PAYLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Payload exceeds maximum allowed size.")
+
     ingestor = ExternalIncidentIngestor(db)
     ext = await ingestor.ingest(payload.model_dump())
+    increment_metric("incidents_ingested_total")
     return {
         "status": ext.status,
         "external_incident_id": ext.external_incident_id,
@@ -87,10 +103,62 @@ async def get_external_incident(external_id: str, db: AsyncSession = Depends(get
 
 # ── Regression CI Run ──────────────────────────────────────────────────────────
 
+async def _run_orchestration_background(req: CIRunRequest, ci_run_id: str):
+    """Background execution for decoupled CI orchestration runs."""
+    from app.db.session import get_session_factory
+    factory = get_session_factory()
+    async with factory() as db:
+        try:
+            orch = RegressionOrchestrator(db)
+            result = await orch.orchestrate(
+                incident_id=req.incident_id, # type: ignore[arg-type]
+                strategy=req.strategy,
+                trigger_source=req.trigger_source or "PULL_REQUEST"
+            )
+            res = await db.execute(select(CIRegressionRun).where(CIRegressionRun.run_id == ci_run_id))
+            ci_run = res.scalars().first()
+            if ci_run:
+                ci_run.orchestration_id = result.id
+                ci_run.status = result.status
+                ci_run.completed_at = datetime.utcnow()
+                await db.commit()
+            increment_metric("ci_orchestrations_total")
+        except Exception:
+            await db.rollback()
+
+
 @router.post("/ci/regression/run")
-async def trigger_ci_regression(req: CIRunRequest, db: AsyncSession = Depends(get_db_session)):
+async def trigger_ci_regression(
+    req: CIRunRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session)
+):
     if not req.incident_id:
         raise HTTPException(400, "incident_id is required")
+
+    # If async_mode requested, offload to background worker tasks
+    if req.async_mode:
+        ci_run_id = f"CI-{uuid.uuid4().hex[:6].upper()}"
+        ci_run = CIRegressionRun(
+            run_id=ci_run_id,
+            orchestration_id=None,
+            provider="github",
+            repository=req.repository,
+            branch=req.branch,
+            commit_sha=req.commit_sha,
+            pull_request_number=req.pull_request_number,
+            status="RUNNING",
+            completed_at=None
+        )
+        db.add(ci_run)
+        await db.commit()
+
+        background_tasks.add_task(_run_orchestration_background, req, ci_run_id)
+        return {
+            "status": "ACCEPTED",
+            "ci_run_id": ci_run_id,
+            "message": "Regression orchestration offloaded to background task."
+        }
 
     orch = RegressionOrchestrator(db)
     result = await orch.orchestrate(
@@ -113,6 +181,7 @@ async def trigger_ci_regression(req: CIRunRequest, db: AsyncSession = Depends(ge
     )
     db.add(ci_run)
     await db.commit()
+    increment_metric("ci_orchestrations_total")
 
     return {
         "status": result.status,
